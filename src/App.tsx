@@ -2,10 +2,16 @@ import {
   CloudServerOutlined,
   CodeOutlined,
   HistoryOutlined,
+  PlusOutlined,
   StarOutlined,
+  SwapOutlined,
 } from '@ant-design/icons';
-import { Layout, Tag, Tooltip } from 'antd';
+import { App as AntdApp, Layout, Select, Tag, Tooltip } from 'antd';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { ROLE_OPTIONS, type Role } from './auth/permissions';
+import { useAuthStore } from './auth/authStore';
+import { appendOrders, correctOrders } from './data/batchOperations';
+import { useDataSourceRevision } from './data/dataSource';
 
 const NAV_ITEMS = [
   { path: '/workbench', label: 'SQL 工作台', icon: <CodeOutlined /> },
@@ -13,9 +19,58 @@ const NAV_ITEMS = [
   { path: '/favorites', label: '收藏查询', icon: <StarOutlined /> },
 ];
 
+function HeaderControls() {
+  const { message } = AntdApp.useApp();
+  const revision = useDataSourceRevision();
+  const role = useAuthStore((state) => state.role);
+  const setRole = useAuthStore((state) => state.setRole);
+
+  return (
+    <div className="header-controls">
+      <Tooltip title="数据源修订号：每次补录/更正批次落库后递增，查询结果据此快照">
+        <Tag color="blue" className="revision-tag">
+          修订 #{revision}
+        </Tag>
+      </Tooltip>
+      <Select
+        value={role}
+        onChange={(value: Role) => setRole(value)}
+        options={ROLE_OPTIONS}
+        className="role-select"
+        variant="filled"
+      />
+      <Tooltip title="运营按批次补录订单，落库后修订号 +1，未导出的结果将自动重算">
+        <Tag
+          icon={<PlusOutlined />}
+          className="batch-tag batch-tag--append"
+          onClick={() => {
+            appendOrders(200);
+            void message.success('已补录 200 笔订单，修订号 +1');
+          }}
+        >
+          补录订单
+        </Tag>
+      </Tooltip>
+      <Tooltip title="运营更正已有订单数据，落库后修订号 +1，未导出的结果将自动重算">
+        <Tag
+          icon={<SwapOutlined />}
+          className="batch-tag batch-tag--correct"
+          onClick={() => {
+            correctOrders(120);
+            void message.success('已更正 120 笔订单，修订号 +1');
+          }}
+        >
+          更正订单
+        </Tag>
+      </Tooltip>
+    </div>
+  );
+}
+
 export function App() {
   const location = useLocation();
   const current = NAV_ITEMS.find((item) => location.pathname.startsWith(item.path));
+  const revision = useDataSourceRevision();
 
   return (
     <Layout className="app-shell">
@@ -45,7 +100,7 @@ export function App() {
           <span className="source-pulse" />
           <div>
             <strong>commerce_dw</strong>
-            <small>前端内存数据源</small>
+            <small>前端内存数据源 · 修订 #{revision}</small>
           </div>
           <Tag color="success">在线</Tag>
         </div>
@@ -66,6 +121,7 @@ export function App() {
             <span className="header-status__dot" />
             <span>模拟集群运行正常</span>
             <Tag>18,000+ 行订单</Tag>
+            <HeaderControls />
           </div>
         </Layout.Header>
         <Layout.Content className="app-content">

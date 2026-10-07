@@ -1,15 +1,17 @@
-import { DatabaseOutlined, FieldBinaryOutlined, SearchOutlined, TableOutlined } from '@ant-design/icons';
+import { DatabaseOutlined, FieldBinaryOutlined, LockOutlined, SearchOutlined, TableOutlined } from '@ant-design/icons';
 import { Empty, Input, Spin, Tree, Typography, type TreeDataNode } from 'antd';
 import { useMemo, useState } from 'react';
+import { isColumnMasked, type Role } from '../auth/permissions';
 import type { DatabaseSchema } from '../types/sql';
 
 interface SchemaTreeProps {
   schema?: DatabaseSchema;
   loading: boolean;
+  role: Role;
   onUseTable: (tableName: string) => void;
 }
 
-export function SchemaTree({ schema, loading, onUseTable }: SchemaTreeProps) {
+export function SchemaTree({ schema, loading, role, onUseTable }: SchemaTreeProps) {
   const [search, setSearch] = useState('');
   const treeData = useMemo<TreeDataNode[]>(() => {
     if (!schema) return [];
@@ -34,7 +36,15 @@ export function SchemaTree({ schema, loading, onUseTable }: SchemaTreeProps) {
             icon: <TableOutlined />,
             children: table.columns.map((column) => ({
               key: `column:${table.name}.${column.name}`,
-              title: `${column.name}  ${column.type}`,
+              title: (
+                <span className="schema-column-title">
+                  {column.name}
+                  <span className="schema-column-type"> {column.type}</span>
+                  {isColumnMasked(column.name, role) && (
+                    <LockOutlined className="schema-column-lock" title="该列对当前角色掩码" />
+                  )}
+                </span>
+              ),
               icon: <FieldBinaryOutlined />,
               selectable: false,
             })),

@@ -443,15 +443,26 @@ kbd {
 }
 
 .result-body {
+  display: flex;
   min-height: 0;
   flex: 1;
+  flex-direction: column;
   overflow: hidden;
 }
 
-.result-body .ant-table-wrapper,
-.result-body .ant-spin-nested-loading,
-.result-body .ant-spin-container {
-  height: 100%;
+.result-body > .recompute-banner {
+  flex: 0 0 auto;
+  margin: 8px 12px 0;
+}
+
+.result-body > .ant-table-wrapper,
+.result-body > .ant-spin-nested-loading,
+.result-body > .result-state,
+.result-body > .result-error,
+.result-body > .result-empty {
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
 
 .result-body .ant-table {
@@ -499,6 +510,108 @@ kbd {
 .null-value {
   color: #98a2b3;
   font-style: italic;
+}
+
+.masked-column-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.masked-column-lock {
+  color: #b54708;
+  font-size: 11px;
+}
+
+.schema-column-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.schema-column-type {
+  color: #98a2b3;
+}
+
+.schema-column-lock {
+  color: #b54708;
+  font-size: 11px;
+}
+
+.totals-label {
+  color: #475467;
+  font-weight: 600;
+}
+
+.totals-value {
+  color: #175cd3;
+  font-weight: 600;
+}
+
+.result-body .ant-table-summary > tr > th,
+.result-body .ant-table-summary > tr > td {
+  background: #f6f8fb !important;
+  border-top: 1px solid #dfe5ee;
+  font-size: 12px;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+}
+
+.revision-tag {
+  margin-inline-end: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.role-select {
+  width: 210px;
+  font-size: 12px;
+}
+
+.batch-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-end: 0;
+  padding: 2px 10px;
+  cursor: pointer;
+  user-select: none;
+  transition: .18s ease;
+}
+
+.batch-tag--append {
+  color: #027a48;
+  border-color: #b7e4c7;
+  background: #ecfdf3;
+}
+
+.batch-tag--append:hover {
+  border-color: #027a48;
+}
+
+.batch-tag--correct {
+  color: #b54708;
+  border-color: #fdd9a8;
+  background: #fffaeb;
+}
+
+.batch-tag--correct:hover {
+  border-color: #b54708;
+}
+
+@media (max-width: 1200px) {
+  .header-status > span,
+  .header-status > .ant-tag:not(.revision-tag) {
+    display: none;
+  }
+
+  .role-select {
+    width: 168px;
+  }
 }
 
 .result-state,

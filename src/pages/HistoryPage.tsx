@@ -72,6 +72,9 @@ export function HistoryPage() {
                       <Tag color={item.success ? 'green' : 'red'} style={{ marginLeft: 10 }}>
                         {item.success ? `${item.rowCount} 行` : '失败'}
                       </Tag>
+                      {item.success && item.revision !== undefined && (
+                        <Tag color="blue">修订 #{item.revision}</Tag>
+                      )}
                       {item.success && <span className="muted-text">{item.elapsedMs} ms</span>}
                     </span>
                   }
