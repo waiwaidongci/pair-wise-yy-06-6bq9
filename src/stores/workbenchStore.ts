@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { FavoriteQuery, QueryHistoryEntry, QuerySession } from '../types/sql';
+import type { FavoriteQuery, QueryHistoryEntry, QuerySession, RoleId } from '../types/sql';
 
 const DEFAULT_SQL = `SELECT order_no, customer_name, region, amount, status
 FROM orders
@@ -24,6 +24,8 @@ interface WorkbenchState {
   activeTabId: string;
   history: QueryHistoryEntry[];
   favorites: FavoriteQuery[];
+  /** 当前查看角色，决定列掩码口径 */
+  role: RoleId;
   addTab: (sql?: string) => void;
   closeTab: (id: string) => void;
   activateTab: (id: string) => void;
@@ -32,6 +34,7 @@ interface WorkbenchState {
   clearHistory: () => void;
   addFavorite: (name: string, sql: string) => void;
   removeFavorite: (id: string) => void;
+  setRole: (role: RoleId) => void;
 }
 
 export const useWorkbenchStore = create<WorkbenchState>()(
@@ -100,6 +103,8 @@ export const useWorkbenchStore = create<WorkbenchState>()(
         })),
       removeFavorite: (id) =>
         set((state) => ({ favorites: state.favorites.filter((favorite) => favorite.id !== id) })),
+      role: 'admin',
+      setRole: (role) => set({ role }),
     }),
     {
       name: 'pair-wise-yy-06-workbench',
@@ -108,6 +113,7 @@ export const useWorkbenchStore = create<WorkbenchState>()(
         activeTabId: state.activeTabId,
         history: state.history,
         favorites: state.favorites,
+        role: state.role,
       }),
     },
   ),

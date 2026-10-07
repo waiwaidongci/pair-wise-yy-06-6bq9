@@ -27,7 +27,7 @@ export function HistoryPage() {
         <div>
           <Typography.Title level={2}>查询历史</Typography.Title>
           <Typography.Text type="secondary">
-            最近 100 次执行记录保存在本机浏览器，可随时恢复为新的查询标签。
+            最近 100 次执行记录保存在本机浏览器，每条记录标注数据修订号，可回溯口径并恢复为新的查询标签。
           </Typography.Text>
         </div>
         {history.length > 0 && (
@@ -72,6 +72,7 @@ export function HistoryPage() {
                       <Tag color={item.success ? 'green' : 'red'} style={{ marginLeft: 10 }}>
                         {item.success ? `${item.rowCount} 行` : '失败'}
                       </Tag>
+                      {item.revision != null && <Tag color="geekblue">修订 R{item.revision}</Tag>}
                       {item.success && <span className="muted-text">{item.elapsedMs} ms</span>}
                     </span>
                   }

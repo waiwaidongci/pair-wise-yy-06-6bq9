@@ -1,6 +1,8 @@
-import { DatabaseOutlined, FieldBinaryOutlined, SearchOutlined, TableOutlined } from '@ant-design/icons';
-import { Empty, Input, Spin, Tree, Typography, type TreeDataNode } from 'antd';
+import { DatabaseOutlined, EyeInvisibleOutlined, FieldBinaryOutlined, SearchOutlined, TableOutlined } from '@ant-design/icons';
+import { Empty, Input, Spin, Tooltip, Tree, Typography, type TreeDataNode } from 'antd';
 import { useMemo, useState } from 'react';
+import { getMaskedColumns } from '../data/permissions';
+import { useWorkbenchStore } from '../stores/workbenchStore';
 import type { DatabaseSchema } from '../types/sql';
 
 interface SchemaTreeProps {
@@ -11,6 +13,7 @@ interface SchemaTreeProps {
 
 export function SchemaTree({ schema, loading, onUseTable }: SchemaTreeProps) {
   const [search, setSearch] = useState('');
+  const role = useWorkbenchStore((state) => state.role);
   const treeData = useMemo<TreeDataNode[]>(() => {
     if (!schema) return [];
     const needle = search.trim().toLowerCase();
@@ -28,20 +31,35 @@ export function SchemaTree({ schema, loading, onUseTable }: SchemaTreeProps) {
               table.columns.some((column) => column.name.toLowerCase().includes(needle))
             );
           })
-          .map((table) => ({
-            key: `table:${table.name}`,
-            title: table.label,
-            icon: <TableOutlined />,
-            children: table.columns.map((column) => ({
-              key: `column:${table.name}.${column.name}`,
-              title: `${column.name}  ${column.type}`,
-              icon: <FieldBinaryOutlined />,
-              selectable: false,
-            })),
-          })),
+          .map((table) => {
+            const maskedColumns = getMaskedColumns(role, table.name);
+            return {
+              key: `table:${table.name}`,
+              title: table.label,
+              icon: <TableOutlined />,
+              children: table.columns.map((column) => {
+                const masked = maskedColumns.has(column.name.toLowerCase());
+                return {
+                  key: `column:${table.name}.${column.name}`,
+                  title: masked ? (
+                    <span className="masked-column">
+                      {column.name} {column.type}
+                      <Tooltip title="当前角色受限：结果、复制与导出中均为掩码值，不参与排序与合计">
+                        <EyeInvisibleOutlined className="masked-icon" />
+                      </Tooltip>
+                    </span>
+                  ) : (
+                    `${column.name}  ${column.type}`
+                  ),
+                  icon: <FieldBinaryOutlined />,
+                  selectable: false,
+                };
+              }),
+            };
+          }),
       },
     ];
-  }, [schema, search]);
+  }, [schema, search, role]);
 
   return (
     <aside className="schema-pane">

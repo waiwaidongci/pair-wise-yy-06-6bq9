@@ -34,4 +34,5 @@ export const ERROR_MAPPINGS: Record<string, { title: string; hint: string }> = {
   COLUMN_NOT_FOUND: { title: '字段不存在', hint: '使用补全提示选择表中存在的字段。' },
   EMPTY_SQL: { title: '未输入 SQL', hint: '请输入一条 SELECT 查询。' },
   QUERY_ABORTED: { title: '查询已取消', hint: '可修改条件后重新执行。' },
+  MASKED_COLUMN_SORT: { title: '掩码列不可排序', hint: '受限列不参与排序，请改用可见列或切换角色。' },
 };

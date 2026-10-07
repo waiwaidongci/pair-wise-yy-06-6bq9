@@ -3,9 +3,15 @@ import {
   CodeOutlined,
   HistoryOutlined,
   StarOutlined,
+  UserSwitchOutlined,
 } from '@ant-design/icons';
-import { Layout, Tag, Tooltip } from 'antd';
+import { Layout, Select, Tag, Tooltip } from 'antd';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { getTableRowCount } from './data/mockDatabase';
+import { ROLES, getRoleProfile } from './data/permissions';
+import { useDataSourceStore } from './stores/dataSourceStore';
+import { useWorkbenchStore } from './stores/workbenchStore';
+import type { RoleId } from './types/sql';
 
 const NAV_ITEMS = [
   { path: '/workbench', label: 'SQL 工作台', icon: <CodeOutlined /> },
@@ -16,6 +22,12 @@ const NAV_ITEMS = [
 export function App() {
   const location = useLocation();
   const current = NAV_ITEMS.find((item) => location.pathname.startsWith(item.path));
+  const role = useWorkbenchStore((state) => state.role);
+  const setRole = useWorkbenchStore((state) => state.setRole);
+  const revision = useDataSourceStore((state) => state.revision);
+  const roleProfile = getRoleProfile(role);
+  // 订阅修订号，批次应用后订单行数同步刷新
+  const orderCount = getTableRowCount('orders');
 
   return (
     <Layout className="app-shell">
@@ -45,7 +57,7 @@ export function App() {
           <span className="source-pulse" />
           <div>
             <strong>commerce_dw</strong>
-            <small>前端内存数据源</small>
+            <small>前端内存数据源 · 修订 R{revision}</small>
           </div>
           <Tag color="success">在线</Tag>
         </div>
@@ -65,7 +77,21 @@ export function App() {
           <div className="header-status">
             <span className="header-status__dot" />
             <span>模拟集群运行正常</span>
-            <Tag>18,000+ 行订单</Tag>
+            <Tag>{orderCount.toLocaleString('zh-CN')} 行订单</Tag>
+            <Tag color="geekblue">修订 R{revision}</Tag>
+            <Tooltip title={`${roleProfile.label}：${roleProfile.description}`}>
+              <Select<RoleId>
+                size="small"
+                className="role-select"
+                value={role}
+                suffixIcon={<UserSwitchOutlined />}
+                onChange={(nextRole) => setRole(nextRole)}
+                options={ROLES.map((item) => ({
+                  value: item.id,
+                  label: item.label,
+                }))}
+              />
+            </Tooltip>
           </div>
         </Layout.Header>
         <Layout.Content className="app-content">

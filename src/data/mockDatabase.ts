@@ -1,11 +1,15 @@
 import type {
+  BatchKind,
+  BatchRecord,
   ColumnSchema,
   DatabaseSchema,
   QueryColumn,
   QueryResult,
+  RoleId,
   SqlValue,
   TableSchema,
 } from '../types/sql';
+import { getMaskedColumns, getRoleProfile, maskValue } from './permissions';
 import { SqlQueryError } from '../utils/queryErrors';
 
 const CUSTOMER_PREFIXES = ['远海', '星图', '柏川', '新域', '启明', '屹辰', '和光', '云舟'];
@@ -27,17 +31,23 @@ const orderColumns: ColumnSchema[] = [
   { name: 'created_at', type: 'date', description: '创建时间' },
 ];
 
-const orders: Array<Record<string, SqlValue>> = Array.from({ length: 18000 }, (_, index) => ({
-  order_no: `SO-${202600000 + index}`,
-  customer_name: `${CUSTOMER_PREFIXES[index % CUSTOMER_PREFIXES.length]}${CUSTOMER_SUFFIXES[(index * 3) % CUSTOMER_SUFFIXES.length]}`,
-  region: REGIONS[(index * 5) % REGIONS.length],
-  product: PRODUCTS[(index * 7) % PRODUCTS.length],
-  owner: OWNERS[(index * 11) % OWNERS.length],
-  amount: Math.round((1200 + ((index * 7919) % 930000) / 3) * 100) / 100,
-  quantity: 1 + ((index * 17) % 320),
-  status: STATUSES[(index * 13) % STATUSES.length],
-  created_at: `2026-${String((index % 12) + 1).padStart(2, '0')}-${String((index * 3) % 27 + 1).padStart(2, '0')} ${String(index % 24).padStart(2, '0')}:${String((index * 7) % 60).padStart(2, '0')}:00`,
-}));
+function createOrderRow(index: number): Record<string, SqlValue> {
+  return {
+    order_no: `SO-${202600000 + index}`,
+    customer_name: `${CUSTOMER_PREFIXES[index % CUSTOMER_PREFIXES.length]}${CUSTOMER_SUFFIXES[(index * 3) % CUSTOMER_SUFFIXES.length]}`,
+    region: REGIONS[(index * 5) % REGIONS.length],
+    product: PRODUCTS[(index * 7) % PRODUCTS.length],
+    owner: OWNERS[(index * 11) % OWNERS.length],
+    amount: Math.round((1200 + ((index * 7919) % 930000) / 3) * 100) / 100,
+    quantity: 1 + ((index * 17) % 320),
+    status: STATUSES[(index * 13) % STATUSES.length],
+    created_at: `2026-${String((index % 12) + 1).padStart(2, '0')}-${String((index * 3) % 27 + 1).padStart(2, '0')} ${String(index % 24).padStart(2, '0')}:${String((index * 7) % 60).padStart(2, '0')}:00`,
+  };
+}
+
+const orders: Array<Record<string, SqlValue>> = Array.from({ length: 18000 }, (_, index) =>
+  createOrderRow(index),
+);
 
 const customers: Array<Record<string, SqlValue>> = Array.from({ length: 2600 }, (_, index) => ({
   customer_id: `CUS-${String(index + 1).padStart(6, '0')}`,
@@ -126,6 +136,69 @@ export const DATABASE: DatabaseSchema = {
   ],
 };
 
+/**
+ * 数据源修订号：运营每应用一个批次（补录/更正）修订号 +1。
+ * 每次查询执行都会取执行时刻修订号下的数据快照，
+ * 分页、复制和导出均基于该快照，口径可回溯。
+ */
+let dataRevision = 1;
+const batchLog: BatchRecord[] = [];
+
+export function getDataRevision(): number {
+  return dataRevision;
+}
+
+export function getBatchLog(): BatchRecord[] {
+  return [...batchLog];
+}
+
+export function getTableRowCount(tableName: string): number {
+  return DATABASE.tables.find((table) => table.name === tableName)?.rows.length ?? 0;
+}
+
+/** 应用一个运营批次（补录或更正订单数据），修订号 +1 并记录批次日志。 */
+export function applyOpsBatch(kind: BatchKind): BatchRecord {
+  const ordersTable = DATABASE.tables.find((table) => table.name === 'orders');
+  if (!ordersTable) {
+    throw new Error('orders 表不存在');
+  }
+  dataRevision += 1;
+  let affectedRows = 0;
+  let detail = '';
+  if (kind === 'backfill') {
+    const count = 80 + ((dataRevision * 37) % 120);
+    const base = ordersTable.rows.length;
+    for (let offset = 0; offset < count; offset += 1) {
+      ordersTable.rows.push(createOrderRow(base + offset));
+    }
+    affectedRows = count;
+    detail = `补录订单 ${count} 行`;
+  } else {
+    const rows = ordersTable.rows;
+    const count = Math.min(rows.length, 60 + ((dataRevision * 29) % 90));
+    for (let index = 0; index < count; index += 1) {
+      const row = rows[(dataRevision * 733 + index * 97) % rows.length];
+      row.amount = Math.round(Number(row.amount) * 0.98 * 100) / 100;
+      if (row.status === '异常') {
+        row.status = '待审核';
+      }
+    }
+    affectedRows = count;
+    detail = `更正金额与状态 ${count} 行`;
+  }
+  const batch: BatchRecord = {
+    id: crypto.randomUUID(),
+    revision: dataRevision,
+    kind,
+    label: kind === 'backfill' ? '批次补录' : '批次更正',
+    detail,
+    affectedRows,
+    appliedAt: Date.now(),
+  };
+  batchLog.unshift(batch);
+  return batch;
+}
+
 interface ParsedQuery {
   select: Array<{ source: string; alias: string }>;
   table: TableSchema;
@@ -147,7 +220,8 @@ export function getSchema(): DatabaseSchema {
 
 export async function executeMockQuery(
   sql: string,
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  role: RoleId,
 ): Promise<QueryResult> {
   const startedAt = performance.now();
   const parsed = parseSelect(sql);
@@ -160,22 +234,56 @@ export async function executeMockQuery(
     );
   }
 
+  // 取当前修订号下的数据快照：执行期间即使有新批次写入，也不影响本次结果。
+  const revision = getDataRevision();
+  const snapshotRows = parsed.table.rows.map((row) => ({ ...row }));
+
   await waitForMockLatency(180 + Math.min(1000, parsed.table.rows.length / 40), signal);
+
+  const maskedColumns = getMaskedColumns(role, parsed.table.name);
+  const isMasked = (columnName: string) => maskedColumns.has(columnName.toLowerCase());
+
+  let orderBy = parsed.orderBy;
+  if (orderBy) {
+    const canonical = parsed.table.columns.find(
+      (column) => column.name.toLowerCase() === orderBy?.field.toLowerCase(),
+    );
+    const position = Math.max(0, sql.toLowerCase().lastIndexOf(orderBy.field.toLowerCase()));
+    if (!canonical) {
+      throw new SqlQueryError(
+        'COLUMN_NOT_FOUND',
+        `排序字段 ${orderBy.field} 不存在于 ${parsed.table.name}`,
+        `可用字段：${parsed.table.columns.map((column) => column.name).join('、')}`,
+        position,
+      );
+    }
+    if (isMasked(canonical.name)) {
+      throw new SqlQueryError(
+        'MASKED_COLUMN_SORT',
+        `列 ${canonical.name} 在当前角色「${getRoleProfile(role).label}」下已掩码，不参与排序`,
+        '掩码列不能用于 ORDER BY，请改用可见列排序，或切换具备权限的角色。',
+        position,
+      );
+    }
+    orderBy = { ...orderBy, field: canonical.name };
+  }
 
   const selectedColumns = resolveColumns(parsed);
   const filtered = parsed.where
-    ? parsed.table.rows.filter((row) => evaluateWhere(row, parsed.where as WhereNode))
-    : [...parsed.table.rows];
+    ? snapshotRows.filter((row) => evaluateWhere(row, parsed.where as WhereNode))
+    : snapshotRows;
 
-  if (parsed.orderBy) {
-    const { field, direction } = parsed.orderBy;
+  if (orderBy) {
+    const { field, direction } = orderBy;
     filtered.sort((left, right) => compareValues(left[field], right[field]) * (direction === 'asc' ? 1 : -1));
   }
 
   const rows = filtered.slice(0, parsed.limit).map((row) => {
     const projected: Record<string, SqlValue> = {};
     selectedColumns.forEach((column) => {
-      projected[column.name] = row[column.source];
+      projected[column.name] = isMasked(column.source)
+        ? maskValue(row[column.source])
+        : row[column.source];
     });
     return projected;
   });
@@ -183,7 +291,12 @@ export async function executeMockQuery(
   return {
     columns: selectedColumns.map(({ name, source }) => {
       const schema = parsed.table.columns.find((column) => column.name === source);
-      return { name, label: name, type: schema?.type ?? 'string' } satisfies QueryColumn;
+      return {
+        name,
+        label: name,
+        type: schema?.type ?? 'string',
+        masked: isMasked(source),
+      } satisfies QueryColumn;
     }),
     rows,
     rowCount: rows.length,
@@ -191,6 +304,8 @@ export async function executeMockQuery(
     elapsedMs: Math.max(12, Math.round(performance.now() - startedAt)),
     sql,
     truncated: filtered.length > parsed.limit,
+    revision,
+    role,
   };
 }
 
